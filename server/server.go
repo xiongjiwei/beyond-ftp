@@ -1,4 +1,3 @@
-// Package server provides all the tools to build your own FTP server: The core library and the driver.
 package server
 
 import (
