@@ -2,8 +2,10 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"github.com/beyondstorage/go-stream"
 	"io"
 	"strconv"
 
@@ -66,42 +68,50 @@ func (c *Handler) upload(path string, tr utils.Conn, append bool) error {
 				return err
 			}
 		}
-
-		file, size, err := c.cacheFile(tr)
-		if err != nil {
-			return err
-		}
-
-		_, err = appender.WriteAppendWithContext(c.commandAbortCtx, object, file, size)
-		if err != nil {
-			return err
-		}
-		err = appender.CommitAppendWithContext(c.commandAbortCtx, object)
-		if err != nil {
+		
+		if err = writeToObject(c.commandAbortCtx, stream.PersistMethodAppend, path, tr, c.storager, object); err != nil {
 			return err
 		}
 		return nil
 	}
 
-	file, size, err := c.cacheFile(tr)
-	if err != nil {
-		return err
-	}
-	_, err = c.storager.WriteWithContext(c.commandAbortCtx, path, file, size)
-	if err != nil {
+	if err := writeToObject(c.commandAbortCtx, stream.PersistMethodMultipart, path, tr, c.storager, nil); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (c *Handler) cacheFile(tr utils.Conn) (io.Reader, int64, error) {
-	file := new(bytes.Buffer)
-	size, err := io.Copy(file, tr)
-	if err != nil {
-		return nil, 0, err
+func writeToObject(ctx context.Context, label, path string, r io.Reader, storager types.Storager, o *types.Object) error {
+	b := utils.Branch(label, path)
+	if b != nil {
+		_, err := b.ReadFrom(r)
+		if err != nil {
+			return err
+		}
+		return b.Complete()
 	}
 
-	return file, size, nil
+	file := new(bytes.Buffer)
+	size, err := io.Copy(file, r)
+	if err != nil {
+		return err
+	}
+	switch label {
+	case stream.PersistMethodAppend:
+		appender := storager.(types.Appender)
+		_, err = appender.WriteAppendWithContext(ctx, o, file, size)
+		if err != nil {
+			return err
+		}
+		err = appender.CommitAppendWithContext(ctx, o)
+		if err != nil {
+			return err
+		}
+	case stream.PersistMethodWrite, stream.PersistMethodMultipart:
+		_, err := storager.WriteWithContext(ctx, path, file, size)
+		return err
+	}
+	return fmt.Errorf("label %s not support", label)
 }
 
 func (c *Handler) handleRETR() {
