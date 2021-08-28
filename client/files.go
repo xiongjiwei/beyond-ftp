@@ -23,7 +23,7 @@ func (c *Handler) handleSTOR() {
 func (c *Handler) handleAPPE() {
 	_, ok := c.storager.(types.Appender)
 	if !ok {
-		c.WriteMessage(StatusCommandNotImplemented, "this type of storage is not support append")
+		c.WriteMessage(StatusCommandNotImplemented, "this type of storage is not support appen")
 		return
 	}
 	path := c.absPath(c.param)
